@@ -9,7 +9,7 @@ from tqdm import trange
 from collections import Counter
 from scipy.special import softmax
 from sktime.performance_metrics.forecasting import \
-    mean_absolute_error, mean_absolute_percentage_error
+    mean_absolute_error, mean_absolute_percentage_error, mean_squared_error
 
 import torch
 import torch.nn as nn
@@ -17,9 +17,9 @@ import torch.nn.functional as F
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
-DATA_DIR = 'dataset'
-SCALE_MEAN, SCALE_STD = np.load(f'{DATA_DIR}/scaler.npy')
-def inv_trans(x): return x * SCALE_STD + SCALE_MEAN
+DATA_DIR = 'dataset/ili'
+# SCALE_MEAN, SCALE_STD = np.load(f'{DATA_DIR}/scaler.npy')
+# def inv_trans(x): return x * SCALE_STD + SCALE_MEAN
 
 
 ##############
@@ -134,11 +134,12 @@ class Env:
             action = tmp
         weighted_y = np.multiply(action.reshape(-1, 1), self.bm_preds[idx])
         weighted_y = weighted_y.sum(axis=0)
-        new_mape = mean_absolute_percentage_error(inv_trans(self.y[idx]), inv_trans(weighted_y))
-        new_mae = mean_absolute_error(inv_trans(self.y[idx]), inv_trans(weighted_y))
+        new_mape = mean_absolute_percentage_error(self.y[idx], weighted_y)
+        new_mae = mean_absolute_error(self.y[idx], weighted_y)
+        new_mse = mean_squared_error(self.y[idx], weighted_y)
         new_error = np.array([*self.error[idx], new_mape])
         rank = np.where(np.argsort(new_error) == len(new_error) - 1)[0][0]
-        return rank, new_mape, new_mae 
+        return rank, new_mape, new_mae, new_mse
 
 
 class ReplayBuffer:
@@ -211,7 +212,7 @@ def pretrain_actor(obs_dim, act_dim, hidden_dim, states, train_error, cls_weight
     loss_fn    = nn.CrossEntropyLoss(weight=cls_weights)  # weighted CE loss
     best_acc   = 0
     patience   = 0
-    max_patience = 5
+    max_patience = 10
     for epoch in trange(200, desc='[Pretrain]'):
         epoch_loss = []
         shuffle_idx = np.random.permutation(np.arange(L))
@@ -259,10 +260,7 @@ def run_rlmc(use_weight=True, use_td=True, use_extra=True, use_pretrain=True, ep
     valid_X = np.swapaxes(valid_X, 2, 1)
     test_X  = np.swapaxes(test_X,  2, 1)
     L = len(train_X) - 1 if use_td else len(train_X)
-    FEAT_LEN = 20
-    train_X = train_X[:, :, -FEAT_LEN:]
-    valid_X = valid_X[:, :, -FEAT_LEN:]
-    test_X  = test_X[:,  :, -FEAT_LEN:]
+
     states = torch.FloatTensor(train_X).to(device)
     valid_states = torch.FloatTensor(valid_X).to(device)
     test_states = torch.FloatTensor(test_X).to(device)
@@ -272,21 +270,22 @@ def run_rlmc(use_weight=True, use_td=True, use_extra=True, use_pretrain=True, ep
 
     env = Env(train_error, train_y)
     best_model_weight = get_state_weight(train_error)
-    if not os.path.exists('dataset/batch_buffer.csv'):
+    if not os.path.exists('dataset/ili/batch_buffer.csv'):
         batch_buffer = []
         for state_idx in trange(L, desc='[Create buffer]'):
             best_model_idx = train_error[state_idx].argmin()
             for action_idx in range(act_dim):
-                rank, mape, mae = env.reward_func(state_idx, action_idx)
-                batch_buffer.append((state_idx, action_idx, rank, mape, mae, best_model_weight[best_model_idx]))
+                rank, mape, mae, mse = env.reward_func(state_idx, action_idx)
+                batch_buffer.append((state_idx, action_idx, rank, mape, mae, mse, best_model_weight[best_model_idx]))
         batch_buffer_df = pd.DataFrame(
             batch_buffer,
-            columns=['state_idx', 'action_idx', 'rank', 'mape', 'mae', 'weight']) 
-        batch_buffer_df.to_csv('dataset/batch_buffer.csv')
+            columns=['state_idx', 'action_idx', 'rank', 'mape', 'mae', 'mse', 'weight']) 
+        batch_buffer_df.to_csv('dataset/ili/batch_buffer.csv')
     else:
-        batch_buffer_df = pd.read_csv('dataset/batch_buffer.csv', index_col=0)
+        batch_buffer_df = pd.read_csv('dataset/ili/batch_buffer.csv', index_col=0)
     q_mape = [batch_buffer_df['mape'].quantile(0.1*i) for i in range(1, 10)]     
-    q_mae = [batch_buffer_df['mape'].quantile(0.1*i) for i in range(1, 10)]     
+    q_mae = [batch_buffer_df['mae'].quantile(0.1*i) for i in range(1, 10)]
+    q_mse = [batch_buffer_df['mse'].quantile(0.1*i) for i in range(1, 10)]
 
     if use_td:
         batch_buffer_df = batch_buffer_df.query(f'state_idx < {L}')
@@ -305,6 +304,13 @@ def run_rlmc(use_weight=True, use_td=True, use_extra=True, use_pretrain=True, ep
         reward = -R + 2*R*(9 - q)/9
         return reward
     
+    def get_mse_reward(q_mse, mse, R=1):
+        q = 0
+        while (q < 9) and (mse > q_mse[q]):
+            q += 1
+        reward = -R + 2*R*(9 - q)/9
+        return reward
+    
     def get_rank_reward(rank, R=1):
         reward = -R + 2*R*(9 - rank)/9
         return reward
@@ -314,13 +320,16 @@ def run_rlmc(use_weight=True, use_td=True, use_extra=True, use_pretrain=True, ep
         rewards = []
         mae_lst = []
         for i in range(len(idxes)):
-            rank, new_mape, new_mae = env.reward_func(idxes[i], actions[i])
+            rank, new_mape, new_mae, new_mse = env.reward_func(idxes[i], actions[i])
             rank_reward = get_rank_reward(rank, 1)
             mape_reward = get_mape_reward(q_mape, new_mape, 1)
-            # mae_reward  = get_mae_reward(q_mae, new_mae, 2)
-            combined_reward = mape_reward + rank_reward
+            mae_reward  = get_mae_reward(q_mae, new_mae, 1)
+            mse_reward = get_mse_reward(q_mse, new_mse, 1)
+            combined_reward_mape = mape_reward + rank_reward
+            combined_reward_mse = mse_reward + rank_reward
+            combined_reward_mae = mae_reward + rank_reward
             mae_lst.append(new_mae)
-            rewards.append(combined_reward)
+            rewards.append(combined_reward_mae)
         return rewards, mae_lst
 
     # state weight
@@ -331,13 +340,13 @@ def run_rlmc(use_weight=True, use_td=True, use_extra=True, use_pretrain=True, ep
         state_weights = None
 
     # initialize the DDPG agent
-    agent = DDPGAgent(use_td, states, obs_dim, act_dim, hidden_dim=100, lr=1e-4)
+    agent = DDPGAgent(use_td, states, obs_dim, act_dim, hidden_dim=256, lr=1e-4)
     replay_buffer = ReplayBuffer(act_dim, max_size=int(1e5))
     extra_buffer  = ReplayBuffer(act_dim, max_size=int(1e5))
     if use_pretrain:
         pretrained_actor = pretrain_actor(obs_dim,
                                           act_dim,
-                                          hidden_dim=100,
+                                          hidden_dim=256,
                                           states=states,
                                           train_error=train_error, 
                                           cls_weights=best_model_weight,
@@ -353,7 +362,7 @@ def run_rlmc(use_weight=True, use_td=True, use_extra=True, use_pretrain=True, ep
             target_param.data.copy_(param.data)
 
     # to save the best model
-    best_actor = Actor(obs_dim, act_dim, hidden_dim=100).to(device)
+    best_actor = Actor(obs_dim, act_dim, hidden_dim=256).to(device)
     for param, target_param in zip(agent.actor.parameters(), best_actor.parameters()):
         target_param.data.copy_(param.data)
 
@@ -370,8 +379,9 @@ def run_rlmc(use_weight=True, use_td=True, use_extra=True, use_pretrain=True, ep
 
     step_size = 4
     step_num  = int(np.ceil(L / step_size))
-    best_mape_loss = np.inf
-    patience, max_patience = 0, 5
+    # best_mape_loss = np.inf
+    best_mse_loss = np.inf
+    patience, max_patience = 0, 10
     for epoch in trange(500):
         t1 = time.time()
         q_loss_lst, pi_loss_lst, q_lst, target_q_lst  = [], [], [], []
@@ -413,16 +423,19 @@ def run_rlmc(use_weight=True, use_td=True, use_extra=True, use_pretrain=True, ep
                     q_lst.append(info['current_q'])
                     target_q_lst.append(info['target_q'])
 
-        valid_mae_loss, valid_mape_loss, count_lst = evaluate_agent(agent, valid_states, valid_preds, valid_y)
+        valid_mse_loss, valid_mae_loss, valid_mape_loss, count_lst = evaluate_agent(agent, valid_states, valid_preds, valid_y)
         print(f'\n# Epoch {epoch + 1} ({(time.time() - t1)/60:.2f} min): '
+              f'valid_mse_loss: {valid_mse_loss:.3f}\t'
               f'valid_mae_loss: {valid_mae_loss:.3f}\t'
               f'valid_mape_loss: {valid_mape_loss*100:.3f}\t' 
               f'q_loss: {np.average(q_loss_lst):.5f}\t'
               f'current_q: {np.average(q_lst):.5f}\t'
               f'target_q: {np.average(target_q_lst):.5f}\n')
 
-        if valid_mape_loss < best_mape_loss:
-            best_mape_loss = valid_mape_loss
+        # if valid_mape_loss < best_mape_loss:
+        #     best_mape_loss = valid_mape_loss
+        if valid_mse_loss < best_mse_loss:
+            best_mse_loss = valid_mse_loss
             patience = 0
             # save best model
             for param, target_param in zip(agent.actor.parameters(), best_actor.parameters()):
@@ -435,23 +448,24 @@ def run_rlmc(use_weight=True, use_td=True, use_extra=True, use_pretrain=True, ep
             
     for param, target_param in zip(agent.actor.parameters(), best_actor.parameters()):
         param.data.copy_(target_param)
-    test_mae_loss, test_mape_loss, count_lst = evaluate_agent(
+    test_mse_loss, test_mae_loss, test_mape_loss, count_lst = evaluate_agent(
         agent, test_states, test_preds, test_y)
-    print(f'test_mae_loss: {test_mae_loss:.3f}\t'
+    print(f'test_mse_loss: {test_mse_loss:.3f}\t'
+          f'test_mae_loss: {test_mae_loss:.3f}\t'
           f'test_mape_loss: {test_mape_loss*100:.3f}')
 
-    return test_mae_loss, test_mape_loss
+    return test_mse_loss, test_mae_loss, test_mape_loss
 
 
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument('--seed', default=42, type=int)
-    parser.add_argument('--use_weight',   action='store_true', default=False)
+    parser.add_argument('--use_weight',   action='store_false', default=True)
     parser.add_argument('--use_td',       action='store_false', default=True)
     parser.add_argument('--use_extra',    action='store_false', default=True)
     parser.add_argument('--use_pretrain', action='store_false', default=True)
-    parser.add_argument('--epsilon', default=0.5, type=float)
+    parser.add_argument('--epsilon', default=1, type=float)
     parser.add_argument('--exp_name', default='rlmc', type=str)
     args = parser.parse_args()
     print(f'Exp args:\n{vars(args)}\n')
@@ -465,4 +479,4 @@ if __name__ == '__main__':
     exp_name     = args.exp_name
     np.random.seed(seed)
     torch.manual_seed(seed)
-    mae_loss, mape_loss = run_rlmc(use_weight, use_td, use_extra, use_pretrain,epsilon)
+    mse_loss, mae_loss, mape_loss = run_rlmc(use_weight, use_td, use_extra, use_pretrain,epsilon)
