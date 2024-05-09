@@ -442,13 +442,25 @@ def run_rlmc(use_weight=True, use_td=True, use_extra=True, use_pretrain=True, ep
                         target_q_lst.append(info['target_q'])
 
             valid_mse_loss, valid_mae_loss, valid_mape_loss, count_lst = evaluate_agent(agent, valid_states, valid_preds, valid_y)
-            print(f'\n# Epoch {epoch + 1} ({(time.time() - t1)/60:.2f} min): '
+            print(f'\n# Epoch {epoch + 1}, variate: {variate} ({(time.time() - t1)/60:.2f} min): '
                 f'valid_mse_loss: {valid_mse_loss:.3f}\t'
                 f'valid_mae_loss: {valid_mae_loss:.3f}\t'
                 f'valid_mape_loss: {valid_mape_loss*100:.3f}\t' 
                 f'q_loss: {np.average(q_loss_lst):.5f}\t'
                 f'current_q: {np.average(q_lst):.5f}\t'
                 f'target_q: {np.average(target_q_lst):.5f}\n')
+            
+            if not os.path.exists('logs'):
+                os.mkdir('logs')
+                
+            with open(f'logs/{variate}.txt', 'a') as f:
+                f.write(f'# Epoch {epoch + 1}, variate: {variate} ({(time.time() - t1)/60:.2f} min): '
+                f'valid_mse_loss: {valid_mse_loss:.3f}\t'
+                f'valid_mae_loss: {valid_mae_loss:.3f}\t'
+                f'valid_mape_loss: {valid_mape_loss*100:.3f}\t' 
+                f'q_loss: {np.average(q_loss_lst):.5f}\t'
+                f'current_q: {np.average(q_lst):.5f}\t'
+                f'target_q: {np.average(target_q_lst):.5f}\n\n')
 
             # if valid_mape_loss < best_mape_loss:
             #     best_mape_loss = valid_mape_loss
