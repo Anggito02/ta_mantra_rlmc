@@ -166,8 +166,8 @@ def unify_input_data_new(data_path):
             )
 
 
-def load_data():
-    input_data = np.load('dataset/ili/dataset/input_rl.npz')
+def load_data(data_path):
+    input_data = np.load(f'{data_path}/dataset/input_rl.npz')
     train_X = input_data['train_X']
     valid_X = input_data['valid_X']
     test_X  = input_data['test_X' ]

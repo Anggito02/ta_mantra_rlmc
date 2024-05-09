@@ -123,9 +123,10 @@ class DDPGAgent:
 
 
 class Env:
-    def __init__(self, train_error, train_y):
+    def __init__(self, train_error, train_y, variate):
         self.error = train_error
-        self.bm_preds = np.load(f'{DATA_DIR}/rl_bm/bm_train_preds.npy')
+        self.bm_preds_merged = np.load(f'{DATA_DIR}/rl_bm/bm_train_preds.npy')
+        self.bm_preds = self.bm_preds_merged[:, :, :, variate]
         self.y = train_y
     
     def reward_func(self, idx, action):
@@ -255,17 +256,26 @@ def pretrain_actor(obs_dim, act_dim, hidden_dim, states, train_error, cls_weight
 
 def run_rlmc(use_weight=True, use_td=True, use_extra=True, use_pretrain=True, epsilon=0.3):
     unify_input_data_new('dataset/ili')
-    (train_X, valid_X, test_X, train_y, valid_y, test_y, train_error, valid_error, _) = load_data()
+    (train_X_merged, valid_X_merged, test_X_merged, train_y_merged, valid_y_merged, test_y_merged, train_error_merged, valid_error_merged, _) = load_data(DATA_DIR)
     valid_preds_merged = np.load(f'{DATA_DIR}/rl_bm/bm_valid_preds.npy')
     test_preds_merged = np.load(f'{DATA_DIR}/rl_bm/bm_test_preds.npy')
-    train_X = np.swapaxes(train_X, 2, 1)
-    valid_X = np.swapaxes(valid_X, 2, 1)
-    test_X  = np.swapaxes(test_X,  2, 1)
 
     isFirst = True
     for variate in range(train_X.shape[1]):
+        train_X = train_X_merged[:, :, variate]
+        valid_X = valid_X_merged[:, :, variate]
+        test_X = test_X_merged[:, :, variate]
+        train_y = train_y_merged[:, :, variate]
+        valid_y = valid_y_merged[:, :, variate]
+        test_y = test_y_merged[:, :, variate]
+        train_error = train_error_merged[:, :, :, variate]
+        valid_error = valid_error_merged[:, :, :, variate]
         valid_preds = valid_preds_merged[:, :, :, variate]
         test_preds = test_preds_merged[:, :, :, variate]
+
+        train_X = np.swapaxes(train_X, 2, 1)
+        valid_X = np.swapaxes(valid_X, 2, 1)
+        test_X  = np.swapaxes(test_X,  2, 1)
         
         L = len(train_X) - 1 if use_td else len(train_X)
 
@@ -276,7 +286,7 @@ def run_rlmc(use_weight=True, use_td=True, use_extra=True, use_pretrain=True, ep
         obs_dim = train_X.shape[1]
         act_dim = train_error.shape[-1]
 
-        env = Env(train_error, train_y)
+        env = Env(train_error, train_y, variate)
         best_model_weight = get_state_weight(train_error)
         if not os.path.exists('dataset/ili/batch_buffer.csv'):
             batch_buffer = []
