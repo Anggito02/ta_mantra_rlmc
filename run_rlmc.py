@@ -17,7 +17,7 @@ import torch.nn.functional as F
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
-DATA_DIR = 'dataset/ili'
+DATA_DIR = 'dataset/iliS'
 # SCALE_MEAN, SCALE_STD = np.load(f'{DATA_DIR}/scaler.npy')
 # def inv_trans(x): return x * SCALE_STD + SCALE_MEAN
 
@@ -124,7 +124,7 @@ class DDPGAgent:
 class Env:
     def __init__(self, train_error, train_y):
         self.error = train_error
-        self.bm_preds = np.load(f'{DATA_DIR}/bm_train_preds.npy')
+        self.bm_preds = np.load(f'{DATA_DIR}/rl_bm/bm_train_preds.npy')
         self.y = train_y
     
     def reward_func(self, idx, action):
@@ -253,9 +253,9 @@ def pretrain_actor(obs_dim, act_dim, hidden_dim, states, train_error, cls_weight
 
 
 def run_rlmc(use_weight=True, use_td=True, use_extra=True, use_pretrain=True, epsilon=0.3):
-    (train_X, valid_X, test_X, train_y, valid_y, test_y, train_error, valid_error, _) = load_data()
-    valid_preds = np.load(f'{DATA_DIR}/bm_valid_preds.npy')
-    test_preds = np.load(f'{DATA_DIR}/bm_test_preds.npy')
+    (train_X, valid_X, test_X, train_y, valid_y, test_y, train_error, valid_error, _) = load_data(DATA_DIR)
+    valid_preds = np.load(f'{DATA_DIR}/rl_bm/bm_vali_preds.npy')
+    test_preds = np.load(f'{DATA_DIR}/rl_bm/bm_test_preds.npy')
     train_X = np.swapaxes(train_X, 2, 1)
     valid_X = np.swapaxes(valid_X, 2, 1)
     test_X  = np.swapaxes(test_X,  2, 1)
