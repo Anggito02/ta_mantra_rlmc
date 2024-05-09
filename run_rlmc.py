@@ -260,16 +260,16 @@ def run_rlmc(use_weight=True, use_td=True, use_extra=True, use_pretrain=True, ep
     valid_preds_merged = np.load(f'{DATA_DIR}/rl_bm/bm_valid_preds.npy')
     test_preds_merged = np.load(f'{DATA_DIR}/rl_bm/bm_test_preds.npy')
 
-    isFirst = True
-    for variate in range(train_X.shape[1]):
-        train_X = train_X_merged[:, :, variate]
-        valid_X = valid_X_merged[:, :, variate]
-        test_X = test_X_merged[:, :, variate]
+    merged_weighted_y = [[] for _ in range(train_X_merged.shape[2])]
+    for variate in range(train_X_merged.shape[2]):
+        train_X = np.expand_dims(train_X_merged[:, :, variate], 2)
+        valid_X = np.expand_dims(valid_X_merged[:, :, variate], 2)
+        test_X = np.expand_dims(test_X_merged[:, :, variate], 2)
         train_y = train_y_merged[:, :, variate]
         valid_y = valid_y_merged[:, :, variate]
         test_y = test_y_merged[:, :, variate]
-        train_error = train_error_merged[:, :, :, variate]
-        valid_error = valid_error_merged[:, :, :, variate]
+        train_error = train_error_merged[:, :, variate]
+        valid_error = valid_error_merged[:, :, variate]
         valid_preds = valid_preds_merged[:, :, :, variate]
         test_preds = test_preds_merged[:, :, :, variate]
 
@@ -469,17 +469,14 @@ def run_rlmc(use_weight=True, use_td=True, use_extra=True, use_pretrain=True, ep
             param.data.copy_(target_param)
         weighted_test = evaluate_agent_test(agent, test_states, test_preds, test_y)
 
-        if isFirst:
-            isFirst = False
-            merged_weighted_y = np.array(weighted_test)
-        else:
-            merged_weighted_y = np.concatenate(weighted_test, axis=0)
-
+        merged_weighted_y[variate] = weighted_test
 
         # Clear cache
         gc.collect()
         torch.cuda.empty_cache()
-
+    
+    merged_weighted_y = np.array(merged_weighted_y)
+    merged_weighted_y = merged_weighted_y.reshape(merged_weighted_y.shape[1], merged_weighted_y.shape[2], merged_weighted_y.shape[3], merged_weighted_y.shape[0])
     test_mse_loss, test_mae_loss, _, test_mape_loss, _ = metric(merged_weighted_y, test_preds_merged)
         
     print(f'test_mse_loss: {test_mse_loss:.3f}\t'

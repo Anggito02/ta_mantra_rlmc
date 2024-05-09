@@ -30,13 +30,18 @@ def compute_mape_error(y, bm_preds):
     return mape_loss_df
 
 def compute_mape_error_new(y, bm_preds):
-    mape_loss_df = pd.DataFrame()
-
+    mape_loss_np = []
     for i in trange(bm_preds.shape[1], desc='[Compute Error]'):     # Compute learner dari tiap learner pakai iterasi dimensi ke 1
-        model_mape_loss = [MAPE(
-            bm_preds[j, i, :], y[j]) for j in range(len(y))]
-        mape_loss_df[i] = model_mape_loss                           # Simpan mape error dari tiap learner di mape_loss_df
-    return mape_loss_df
+        mape_loss_df_variate = [[] for _ in range(bm_preds.shape[-1])]
+        for v in range(bm_preds.shape[-1]):
+            model_mape_loss = [mean_absolute_percentage_error(
+                y[j, :, v], bm_preds[j, i, :, v],
+                symmetric=True) for j in range(len(y))]
+            mape_loss_df_variate[v] = model_mape_loss                           # Simpan mape error dari tiap learner di mape_loss_df
+        mape_loss_np.append(mape_loss_df_variate)
+    mape_loss_np = np.array(mape_loss_np)
+    mape_loss_np = mape_loss_np.reshape(mape_loss_np.shape[2], mape_loss_np.shape[0], mape_loss_np.shape[1])
+    return mape_loss_np
 
 
 def compute_mae_error(y, bm_preds):
@@ -95,9 +100,9 @@ def unify_input_data():
     test_preds = np.concatenate(merge_test_data, axis=1)  # (62795, 9, 24)
     np.save('dataset/bm_test_preds.npy', test_preds)            # Berupa value hasil loss function test dari 1 learner Mantra
 
-    train_error_df = compute_mape_error(train_y, train_preds)
-    valid_error_df = compute_mape_error(valid_y, valid_preds)
-    test_error_df  = compute_mape_error(test_y , test_preds)
+    train_error_np = compute_mape_error(train_y, train_preds)
+    valid_error_np = compute_mape_error(valid_y, valid_preds)
+    test_error_np  = compute_mape_error(test_y , test_preds)
 
     np.savez('dataset/input.npz',
              train_X=train_X,
@@ -106,9 +111,9 @@ def unify_input_data():
              train_y=train_y,
              valid_y=valid_y,
              test_y=test_y,
-             train_error=train_error_df,
-             valid_error=valid_error_df,
-             test_error=test_error_df
+             train_error=train_error_np,
+             valid_error=valid_error_np,
+             test_error=test_error_np
             )
     
 def unify_input_data_new(data_path):
