@@ -1,6 +1,7 @@
 from models.ddpg import Actor, Critic
-from utils import load_data, evaluate_agent
+from utils import load_data, evaluate_agent, evaluate_agent_test, metric, unify_input_data_new
 
+import gc
 import os
 import time
 import numpy as np
@@ -124,7 +125,7 @@ class DDPGAgent:
 class Env:
     def __init__(self, train_error, train_y):
         self.error = train_error
-        self.bm_preds = np.load(f'{DATA_DIR}/bm_train_preds.npy')
+        self.bm_preds = np.load(f'{DATA_DIR}/rl_bm/bm_train_preds.npy')
         self.y = train_y
     
     def reward_func(self, idx, action):
@@ -212,7 +213,7 @@ def pretrain_actor(obs_dim, act_dim, hidden_dim, states, train_error, cls_weight
     loss_fn    = nn.CrossEntropyLoss(weight=cls_weights)  # weighted CE loss
     best_acc   = 0
     patience   = 0
-    max_patience = 10
+    max_patience = 5
     for epoch in trange(200, desc='[Pretrain]'):
         epoch_loss = []
         shuffle_idx = np.random.permutation(np.arange(L))
@@ -253,166 +254,161 @@ def pretrain_actor(obs_dim, act_dim, hidden_dim, states, train_error, cls_weight
 
 
 def run_rlmc(use_weight=True, use_td=True, use_extra=True, use_pretrain=True, epsilon=0.3):
+    unify_input_data_new('dataset/ili')
     (train_X, valid_X, test_X, train_y, valid_y, test_y, train_error, valid_error, _) = load_data()
-    valid_preds = np.load(f'{DATA_DIR}/bm_valid_preds.npy')
-    test_preds = np.load(f'{DATA_DIR}/bm_test_preds.npy')
+    valid_preds_merged = np.load(f'{DATA_DIR}/rl_bm/bm_valid_preds.npy')
+    test_preds_merged = np.load(f'{DATA_DIR}/rl_bm/bm_test_preds.npy')
     train_X = np.swapaxes(train_X, 2, 1)
     valid_X = np.swapaxes(valid_X, 2, 1)
     test_X  = np.swapaxes(test_X,  2, 1)
-    L = len(train_X) - 1 if use_td else len(train_X)
 
-    states = torch.FloatTensor(train_X).to(device)
-    valid_states = torch.FloatTensor(valid_X).to(device)
-    test_states = torch.FloatTensor(test_X).to(device)
-
-    obs_dim = train_X.shape[1]
-    act_dim = train_error.shape[-1]
-
-    env = Env(train_error, train_y)
-    best_model_weight = get_state_weight(train_error)
-    if not os.path.exists('dataset/ili/batch_buffer.csv'):
-        batch_buffer = []
-        for state_idx in trange(L, desc='[Create buffer]'):
-            best_model_idx = train_error[state_idx].argmin()
-            for action_idx in range(act_dim):
-                rank, mape, mae, mse = env.reward_func(state_idx, action_idx)
-                batch_buffer.append((state_idx, action_idx, rank, mape, mae, mse, best_model_weight[best_model_idx]))
-        batch_buffer_df = pd.DataFrame(
-            batch_buffer,
-            columns=['state_idx', 'action_idx', 'rank', 'mape', 'mae', 'mse', 'weight']) 
-        batch_buffer_df.to_csv('dataset/ili/batch_buffer.csv')
-    else:
-        batch_buffer_df = pd.read_csv('dataset/ili/batch_buffer.csv', index_col=0)
-    q_mape = [batch_buffer_df['mape'].quantile(0.1*i) for i in range(1, 10)]     
-    q_mae = [batch_buffer_df['mae'].quantile(0.1*i) for i in range(1, 10)]
-    q_mse = [batch_buffer_df['mse'].quantile(0.1*i) for i in range(1, 10)]
-
-    if use_td:
-        batch_buffer_df = batch_buffer_df.query(f'state_idx < {L}')
-
-    def get_mape_reward(q_mape, mape, R=1):
-        q = 0
-        while (q < 9) and (mape > q_mape[q]):
-            q += 1
-        reward = -R + 2*R*(9 - q)/9
-        return reward
-
-    def get_mae_reward(q_mae, mae, R=1):
-        q = 0
-        while (q < 9) and (mae > q_mae[q]):
-            q += 1
-        reward = -R + 2*R*(9 - q)/9
-        return reward
-    
-    def get_mse_reward(q_mse, mse, R=1):
-        q = 0
-        while (q < 9) and (mse > q_mse[q]):
-            q += 1
-        reward = -R + 2*R*(9 - q)/9
-        return reward
-    
-    def get_rank_reward(rank, R=1):
-        reward = -R + 2*R*(9 - rank)/9
-        return reward
-
-    # combined reward
-    def get_batch_rewards(env, idxes, actions):
-        rewards = []
-        mae_lst = []
-        for i in range(len(idxes)):
-            rank, new_mape, new_mae, new_mse = env.reward_func(idxes[i], actions[i])
-            rank_reward = get_rank_reward(rank, 1)
-            mape_reward = get_mape_reward(q_mape, new_mape, 1)
-            mae_reward  = get_mae_reward(q_mae, new_mae, 1)
-            mse_reward = get_mse_reward(q_mse, new_mse, 1)
-            combined_reward_mape = mape_reward + rank_reward
-            combined_reward_mse = mse_reward + rank_reward
-            combined_reward_mae = mae_reward + rank_reward
-            mae_lst.append(new_mae)
-            rewards.append(combined_reward_mae)
-        return rewards, mae_lst
-
-    # state weight
-    state_weights = [1/best_model_weight[i] for i in train_error.argmin(1)]
-    if use_weight:
-        state_weights = torch.FloatTensor(state_weights).to(device)
-    else:
-        state_weights = None
-
-    # initialize the DDPG agent
-    agent = DDPGAgent(use_td, states, obs_dim, act_dim, hidden_dim=256, lr=1e-4)
-    replay_buffer = ReplayBuffer(act_dim, max_size=int(1e5))
-    extra_buffer  = ReplayBuffer(act_dim, max_size=int(1e5))
-    if use_pretrain:
-        pretrained_actor = pretrain_actor(obs_dim,
-                                          act_dim,
-                                          hidden_dim=256,
-                                          states=states,
-                                          train_error=train_error, 
-                                          cls_weights=best_model_weight,
-                                          valid_states=valid_states, 
-                                          valid_error=valid_error)
+    isFirst = True
+    for variate in range(train_X.shape[1]):
+        valid_preds = valid_preds_merged[:, :, :, variate]
+        test_preds = test_preds_merged[:, :, :, variate]
         
-        # copy the pretrianed actor 
-        for param, target_param in zip(
-                pretrained_actor.parameters(), agent.actor.parameters()):
+        L = len(train_X) - 1 if use_td else len(train_X)
+
+        states = torch.FloatTensor(train_X).to(device)
+        valid_states = torch.FloatTensor(valid_X).to(device)
+        test_states = torch.FloatTensor(test_X).to(device)
+
+        obs_dim = train_X.shape[1]
+        act_dim = train_error.shape[-1]
+
+        env = Env(train_error, train_y)
+        best_model_weight = get_state_weight(train_error)
+        if not os.path.exists('dataset/ili/batch_buffer.csv'):
+            batch_buffer = []
+            for state_idx in trange(L, desc='[Create buffer]'):
+                best_model_idx = train_error[state_idx].argmin()
+                for action_idx in range(act_dim):
+                    rank, mape, mae, mse = env.reward_func(state_idx, action_idx)
+                    batch_buffer.append((state_idx, action_idx, rank, mape, mae, mse, best_model_weight[best_model_idx]))
+            batch_buffer_df = pd.DataFrame(
+                batch_buffer,
+                columns=['state_idx', 'action_idx', 'rank', 'mape', 'mae', 'mse', 'weight']) 
+            batch_buffer_df.to_csv('dataset/ili/batch_buffer.csv')
+        else:
+            batch_buffer_df = pd.read_csv('dataset/ili/batch_buffer.csv', index_col=0)
+        q_mape = [batch_buffer_df['mape'].quantile(0.1*i) for i in range(1, 10)]     
+        q_mae = [batch_buffer_df['mae'].quantile(0.1*i) for i in range(1, 10)]
+        q_mse = [batch_buffer_df['mse'].quantile(0.1*i) for i in range(1, 10)]
+
+        if use_td:
+            batch_buffer_df = batch_buffer_df.query(f'state_idx < {L}')
+
+        def get_mape_reward(q_mape, mape, R=1):
+            q = 0
+            while (q < 9) and (mape > q_mape[q]):
+                q += 1
+            reward = -R + 2*R*(9 - q)/9
+            return reward
+
+        def get_mae_reward(q_mae, mae, R=1):
+            q = 0
+            while (q < 9) and (mae > q_mae[q]):
+                q += 1
+            reward = -R + 2*R*(9 - q)/9
+            return reward
+        
+        def get_mse_reward(q_mse, mse, R=1):
+            q = 0
+            while (q < 9) and (mse > q_mse[q]):
+                q += 1
+            reward = -R + 2*R*(9 - q)/9
+            return reward
+        
+        def get_rank_reward(rank, R=1):
+            reward = -R + 2*R*(9 - rank)/9
+            return reward
+
+        # combined reward
+        def get_batch_rewards(env, idxes, actions):
+            rewards = []
+            mae_lst = []
+            for i in range(len(idxes)):
+                rank, new_mape, new_mae, new_mse = env.reward_func(idxes[i], actions[i])
+                rank_reward = get_rank_reward(rank, 1)
+                mape_reward = get_mape_reward(q_mape, new_mape, 1)
+                mae_reward  = get_mae_reward(q_mae, new_mae, 1)
+                mse_reward = get_mse_reward(q_mse, new_mse, 1)
+                combined_reward_mape = mape_reward + rank_reward
+                combined_reward_mse = mse_reward + rank_reward
+                combined_reward_mae = mae_reward + rank_reward
+                mae_lst.append(new_mae)
+                rewards.append(combined_reward_mae)
+            return rewards, mae_lst
+
+        # state weight
+        state_weights = [1/best_model_weight[i] for i in train_error.argmin(1)]
+        if use_weight:
+            state_weights = torch.FloatTensor(state_weights).to(device)
+        else:
+            state_weights = None
+
+        # initialize the DDPG agent
+        agent = DDPGAgent(use_td, states, obs_dim, act_dim, hidden_dim=256, lr=1e-4)
+        replay_buffer = ReplayBuffer(act_dim, max_size=int(1e5))
+        extra_buffer  = ReplayBuffer(act_dim, max_size=int(1e5))
+        if use_pretrain:
+            pretrained_actor = pretrain_actor(obs_dim,
+                                            act_dim,
+                                            hidden_dim=256,
+                                            states=states,
+                                            train_error=train_error, 
+                                            cls_weights=best_model_weight,
+                                            valid_states=valid_states, 
+                                            valid_error=valid_error)
+            
+            # copy the pretrianed actor 
+            for param, target_param in zip(
+                    pretrained_actor.parameters(), agent.actor.parameters()):
+                target_param.data.copy_(param.data)
+            for param, target_param in zip(
+                    pretrained_actor.parameters(), agent.target_actor.parameters()):
+                target_param.data.copy_(param.data)
+
+        # to save the best model
+        best_actor = Actor(obs_dim, act_dim, hidden_dim=256).to(device)
+        for param, target_param in zip(agent.actor.parameters(), best_actor.parameters()):
             target_param.data.copy_(param.data)
-        for param, target_param in zip(
-                pretrained_actor.parameters(), agent.target_actor.parameters()):
-            target_param.data.copy_(param.data)
 
-    # to save the best model
-    best_actor = Actor(obs_dim, act_dim, hidden_dim=256).to(device)
-    for param, target_param in zip(agent.actor.parameters(), best_actor.parameters()):
-        target_param.data.copy_(param.data)
+        # warm up
+        for _ in trange(200, desc='[Warm Up]'):
+            shuffle_idxes   = np.random.randint(0, L, 300)
+            sampled_states  = states[shuffle_idxes] 
+            sampled_actions = agent.select_action(sampled_states)
+            sampled_rewards, _ = get_batch_rewards(env, shuffle_idxes, sampled_actions)
+            for i in range(len(sampled_states)):
+                replay_buffer.add(shuffle_idxes[i], sampled_actions[i], sampled_rewards[i])
+                if use_extra and sampled_rewards[i] <= -1.:
+                    extra_buffer.add(shuffle_idxes[i], sampled_actions[i], sampled_rewards[i])
 
-    # warm up
-    for _ in trange(200, desc='[Warm Up]'):
-        shuffle_idxes   = np.random.randint(0, L, 300)
-        sampled_states  = states[shuffle_idxes] 
-        sampled_actions = agent.select_action(sampled_states)
-        sampled_rewards, _ = get_batch_rewards(env, shuffle_idxes, sampled_actions)
-        for i in range(len(sampled_states)):
-            replay_buffer.add(shuffle_idxes[i], sampled_actions[i], sampled_rewards[i])
-            if use_extra and sampled_rewards[i] <= -1.:
-                extra_buffer.add(shuffle_idxes[i], sampled_actions[i], sampled_rewards[i])
-
-    step_size = 4
-    step_num  = int(np.ceil(L / step_size))
-    # best_mape_loss = np.inf
-    best_mse_loss = np.inf
-    patience, max_patience = 0, 10
-    for epoch in trange(500):
-        t1 = time.time()
-        q_loss_lst, pi_loss_lst, q_lst, target_q_lst  = [], [], [], []
-        shuffle_idx = np.random.permutation(np.arange(L))
-        for i in range(step_num):
-            batch_idx = shuffle_idx[i*step_size: (i+1)*step_size]        # (512,)
-            batch_states = states[batch_idx]
-            if np.random.random() < epsilon:
-                batch_actions = sparse_explore(batch_states, act_dim)
-            else:
-                batch_actions = agent.select_action(batch_states)
-            batch_rewards, batch_mae = get_batch_rewards(env, batch_idx, batch_actions)
-            for j in range(len(batch_idx)):
-                replay_buffer.add(batch_idx[j], batch_actions[j], batch_rewards[j])
-                if use_extra and batch_rewards[j] <= -1.:
-                    extra_buffer.add(batch_idx[j], batch_actions[j], batch_rewards[j])
-
-            for _ in range(1):
-                sampled_obs_idxes, sampled_actions, sampled_rewards = replay_buffer.sample(512)
-                if use_weight:
-                    sampled_weights = state_weights[sampled_obs_idxes]
+        step_size = 4
+        step_num  = int(np.ceil(L / step_size))
+        # best_mape_loss = np.inf
+        best_mse_loss = np.inf
+        patience, max_patience = 0, 5
+        for epoch in trange(500):
+            t1 = time.time()
+            q_loss_lst, pi_loss_lst, q_lst, target_q_lst  = [], [], [], []
+            shuffle_idx = np.random.permutation(np.arange(L))
+            for i in range(step_num):
+                batch_idx = shuffle_idx[i*step_size: (i+1)*step_size]        # (512,)
+                batch_states = states[batch_idx]
+                if np.random.random() < epsilon:
+                    batch_actions = sparse_explore(batch_states, act_dim)
                 else:
-                    sampled_weights = None
-                info = agent.update(sampled_obs_idxes, sampled_actions, sampled_rewards, sampled_weights)
-                pi_loss_lst.append(info['pi_loss'])
-                q_loss_lst.append(info['q_loss'])
-                q_lst.append(info['current_q'])
-                target_q_lst.append(info['target_q'])
+                    batch_actions = agent.select_action(batch_states)
+                batch_rewards, batch_mae = get_batch_rewards(env, batch_idx, batch_actions)
+                for j in range(len(batch_idx)):
+                    replay_buffer.add(batch_idx[j], batch_actions[j], batch_rewards[j])
+                    if use_extra and batch_rewards[j] <= -1.:
+                        extra_buffer.add(batch_idx[j], batch_actions[j], batch_rewards[j])
 
-                if use_extra and extra_buffer.ptr > 512:
-                    sampled_obs_idxes, sampled_actions, sampled_rewards = extra_buffer.sample(512)
+                for _ in range(1):
+                    sampled_obs_idxes, sampled_actions, sampled_rewards = replay_buffer.sample(512)
                     if use_weight:
                         sampled_weights = state_weights[sampled_obs_idxes]
                     else:
@@ -423,36 +419,62 @@ def run_rlmc(use_weight=True, use_td=True, use_extra=True, use_pretrain=True, ep
                     q_lst.append(info['current_q'])
                     target_q_lst.append(info['target_q'])
 
-        valid_mse_loss, valid_mae_loss, valid_mape_loss, count_lst = evaluate_agent(agent, valid_states, valid_preds, valid_y)
-        print(f'\n# Epoch {epoch + 1} ({(time.time() - t1)/60:.2f} min): '
-              f'valid_mse_loss: {valid_mse_loss:.3f}\t'
-              f'valid_mae_loss: {valid_mae_loss:.3f}\t'
-              f'valid_mape_loss: {valid_mape_loss*100:.3f}\t' 
-              f'q_loss: {np.average(q_loss_lst):.5f}\t'
-              f'current_q: {np.average(q_lst):.5f}\t'
-              f'target_q: {np.average(target_q_lst):.5f}\n')
+                    if use_extra and extra_buffer.ptr > 512:
+                        sampled_obs_idxes, sampled_actions, sampled_rewards = extra_buffer.sample(512)
+                        if use_weight:
+                            sampled_weights = state_weights[sampled_obs_idxes]
+                        else:
+                            sampled_weights = None
+                        info = agent.update(sampled_obs_idxes, sampled_actions, sampled_rewards, sampled_weights)
+                        pi_loss_lst.append(info['pi_loss'])
+                        q_loss_lst.append(info['q_loss'])
+                        q_lst.append(info['current_q'])
+                        target_q_lst.append(info['target_q'])
 
-        # if valid_mape_loss < best_mape_loss:
-        #     best_mape_loss = valid_mape_loss
-        if valid_mse_loss < best_mse_loss:
-            best_mse_loss = valid_mse_loss
-            patience = 0
-            # save best model
-            for param, target_param in zip(agent.actor.parameters(), best_actor.parameters()):
-                target_param.data.copy_(param.data)
+            valid_mse_loss, valid_mae_loss, valid_mape_loss, count_lst = evaluate_agent(agent, valid_states, valid_preds, valid_y)
+            print(f'\n# Epoch {epoch + 1} ({(time.time() - t1)/60:.2f} min): '
+                f'valid_mse_loss: {valid_mse_loss:.3f}\t'
+                f'valid_mae_loss: {valid_mae_loss:.3f}\t'
+                f'valid_mape_loss: {valid_mape_loss*100:.3f}\t' 
+                f'q_loss: {np.average(q_loss_lst):.5f}\t'
+                f'current_q: {np.average(q_lst):.5f}\t'
+                f'target_q: {np.average(target_q_lst):.5f}\n')
+
+            # if valid_mape_loss < best_mape_loss:
+            #     best_mape_loss = valid_mape_loss
+            if valid_mse_loss < best_mse_loss:
+                best_mse_loss = valid_mse_loss
+                patience = 0
+                # save best model
+                for param, target_param in zip(agent.actor.parameters(), best_actor.parameters()):
+                    target_param.data.copy_(param.data)
+            else:
+                patience += 1
+            if patience == max_patience:
+                break
+            epsilon = max(epsilon-0.2, 0.1)
+        
+        # Testing
+        for param, target_param in zip(agent.actor.parameters(), best_actor.parameters()):
+            param.data.copy_(target_param)
+        weighted_test = evaluate_agent_test(agent, test_states, test_preds, test_y)
+
+        if isFirst:
+            isFirst = False
+            merged_weighted_y = np.array(weighted_test)
         else:
-            patience += 1
-        if patience == max_patience:
-            break
-        epsilon = max(epsilon-0.2, 0.1)
-            
-    for param, target_param in zip(agent.actor.parameters(), best_actor.parameters()):
-        param.data.copy_(target_param)
-    test_mse_loss, test_mae_loss, test_mape_loss, count_lst = evaluate_agent(
-        agent, test_states, test_preds, test_y)
+            merged_weighted_y = np.concatenate(weighted_test, axis=0)
+
+
+        # Clear cache
+        gc.collect()
+        torch.cuda.empty_cache()
+
+    test_mse_loss, test_mae_loss, _, test_mape_loss, _ = metric(merged_weighted_y, test_preds_merged)
+        
     print(f'test_mse_loss: {test_mse_loss:.3f}\t'
-          f'test_mae_loss: {test_mae_loss:.3f}\t'
-          f'test_mape_loss: {test_mape_loss*100:.3f}')
+        f'test_mae_loss: {test_mae_loss:.3f}\t'
+        f'test_mape_loss: {test_mape_loss*100:.3f}')
 
     return test_mse_loss, test_mae_loss, test_mape_loss
 

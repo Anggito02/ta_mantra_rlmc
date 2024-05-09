@@ -29,6 +29,15 @@ def compute_mape_error(y, bm_preds):
         mape_loss_df[i] = model_mape_loss                           # Simpan mape error dari tiap learner di mape_loss_df
     return mape_loss_df
 
+def compute_mape_error_new(y, bm_preds):
+    mape_loss_df = pd.DataFrame()
+
+    for i in trange(bm_preds.shape[1], desc='[Compute Error]'):     # Compute learner dari tiap learner pakai iterasi dimensi ke 1
+        model_mape_loss = [MAPE(
+            bm_preds[j, i, :], y[j]) for j in range(len(y))]
+        mape_loss_df[i] = model_mape_loss                           # Simpan mape error dari tiap learner di mape_loss_df
+    return mape_loss_df
+
 
 def compute_mae_error(y, bm_preds):
     loss_df = pd.DataFrame()
@@ -101,10 +110,64 @@ def unify_input_data():
              valid_error=valid_error_df,
              test_error=test_error_df
             )
+    
+def unify_input_data_new(data_path):
+    train_x = np.load(f'{data_path}/dataset/input_train_x.npy')    
+    train_y = np.load(f'{data_path}/dataset/input_train_y.npy')
+    vali_x  = np.load(f'{data_path}/dataset/input_vali_x.npy')
+    vali_y  = np.load(f'{data_path}/dataset/input_vali_y.npy')
+    test_x  = np.load(f'{data_path}/dataset/input_test_x.npy')
+    test_y  = np.load(f'{data_path}/dataset/input_test_y.npy')
+
+    # predictions
+    merge_data = []
+    train_preds_npz = np.load(f'{data_path}/rl_bm/bm_train_preds.npz')
+    for model_name in train_preds_npz.keys():
+        train_preds = train_preds_npz[model_name]
+        train_preds = np.expand_dims(train_preds, axis=1)
+        merge_data.append(train_preds)
+    train_preds_merge_data = np.concatenate(merge_data, axis=1)
+
+    merge_data = []
+    valid_preds_npz = np.load(f'{data_path}/rl_bm/bm_vali_preds.npz')
+    for model_name in valid_preds_npz.keys():
+        valid_preds = valid_preds_npz[model_name]
+        valid_preds = np.expand_dims(valid_preds, axis=1)
+        merge_data.append(valid_preds)
+    valid_preds_merge_data = np.concatenate(merge_data, axis=1)
+
+    merge_data = []
+    test_preds_npz = np.load(f'{data_path}/rl_bm/bm_test_preds.npz')
+    for model_name in test_preds_npz.keys():
+        test_preds = test_preds_npz[model_name]
+        test_preds = np.expand_dims(test_preds, axis=1)
+        merge_data.append(test_preds)
+    test_preds_merge_data = np.concatenate(merge_data, axis=1)
+    
+    # save preds
+    np.save(f'{data_path}/rl_bm/bm_train_preds.npy', train_preds_merge_data)
+    np.save(f'{data_path}/rl_bm/bm_valid_preds.npy', valid_preds_merge_data)
+    np.save(f'{data_path}/rl_bm/bm_test_preds.npy', test_preds_merge_data)
+
+    train_error_df = compute_mape_error_new(train_y, train_preds_merge_data)
+    valid_error_df = compute_mape_error_new(vali_y, valid_preds_merge_data)
+    test_error_df  = compute_mape_error_new(test_y , test_preds_merge_data)
+
+    np.savez(f'{data_path}/dataset/input_rl.npz',
+             train_X=train_x,
+             valid_X=vali_x,
+             test_X=test_x,
+             train_y=train_y,
+             valid_y=vali_y,
+             test_y=test_y,
+             train_error=train_error_df,
+             valid_error=valid_error_df,
+             test_error=test_error_df
+            )
 
 
 def load_data():
-    input_data = np.load('dataset/ili/input.npz')
+    input_data = np.load('dataset/ili/dataset/input_rl.npz')
     train_X = input_data['train_X']
     valid_X = input_data['valid_X']
     test_X  = input_data['test_X' ]
@@ -160,3 +223,44 @@ def evaluate_agent(agent, test_states, test_bm_preds, test_y):
     mae_loss = mean_absolute_error(test_y, weighted_y)
     mape_loss = mean_absolute_percentage_error(test_y, weighted_y)
     return mse_loss, mae_loss, mape_loss, act_sorted
+
+def evaluate_agent_test(agent, test_states, test_bm_preds, test_y):
+    with torch.no_grad():
+        weights = agent.select_action(test_states)  # (2816, 9)
+    weights = np.expand_dims(weights, -1)  # (2816, 9, 1)
+    weighted_y = weights * test_bm_preds  # (2816, 9, 24)
+    weighted_y = weighted_y.sum(1)  # (2816, 24)
+
+    return weighted_y
+
+def MAE(pred, true):
+    return np.mean(np.abs(pred - true))
+
+
+def MSE(pred, true):
+    return np.mean((pred - true) ** 2)
+
+
+def RMSE(pred, true):
+    return np.sqrt(MSE(pred, true))
+
+
+def MAPE(pred, true):
+    return np.mean(np.abs((pred - true) / true))
+
+
+def MSPE(pred, true):
+    return np.mean(np.square((pred - true) / true))
+
+
+def metric(pred, true):
+    # print(pred)
+    # print(true)
+    # print('test shape:', pred.shape, true.shape)
+    mae = MAE(pred, true)
+    mse = MSE(pred, true)
+    rmse = RMSE(pred, true)
+    mape = MAPE(pred, true)
+    mspe = MSPE(pred, true)
+
+    return mae, mse, rmse, mape, mspe
