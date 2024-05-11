@@ -1,0 +1,54 @@
+# Epoch 1, variate: 4 (1.76 min): valid_mse_loss: 0.424	valid_mae_loss: 0.475	valid_mape_loss: 79.460	q_loss: 0.40545	current_q: 4.88226	target_q: 4.89446
+
+# Epoch 2, variate: 4 (1.77 min): valid_mse_loss: 0.399	valid_mae_loss: 0.468	valid_mape_loss: 81.393	q_loss: 0.87952	current_q: 10.65026	target_q: 10.65126
+
+# Epoch 3, variate: 4 (1.77 min): valid_mse_loss: 0.387	valid_mae_loss: 0.463	valid_mape_loss: 83.947	q_loss: 0.94158	current_q: 14.23693	target_q: 14.23789
+
+# Epoch 4, variate: 4 (1.77 min): valid_mse_loss: 0.366	valid_mae_loss: 0.458	valid_mape_loss: 86.030	q_loss: 1.46606	current_q: 16.31172	target_q: 16.31256
+
+# Epoch 5, variate: 4 (1.76 min): valid_mse_loss: 0.400	valid_mae_loss: 0.473	valid_mape_loss: 85.381	q_loss: 4.16003	current_q: 14.86616	target_q: 14.86680
+
+# Epoch 6, variate: 4 (1.77 min): valid_mse_loss: 0.353	valid_mae_loss: 0.447	valid_mape_loss: 93.361	q_loss: 7.01237	current_q: 7.98801	target_q: 7.98471
+
+# Epoch 7, variate: 4 (1.78 min): valid_mse_loss: 0.381	valid_mae_loss: 0.462	valid_mape_loss: 86.629	q_loss: 4.54724	current_q: -2.23710	target_q: -2.24472
+
+# Epoch 8, variate: 4 (1.77 min): valid_mse_loss: 0.375	valid_mae_loss: 0.464	valid_mape_loss: 89.483	q_loss: 5.64833	current_q: -9.67794	target_q: -9.68173
+
+# Epoch 9, variate: 4 (1.76 min): valid_mse_loss: 0.362	valid_mae_loss: 0.457	valid_mape_loss: 89.277	q_loss: 4.25418	current_q: -11.97133	target_q: -11.97215
+
+# Epoch 10, variate: 4 (1.77 min): valid_mse_loss: 0.369	valid_mae_loss: 0.471	valid_mape_loss: 101.415	q_loss: 4.55531	current_q: -11.18852	target_q: -11.18929
+
+# Epoch 11, variate: 4 (1.76 min): valid_mse_loss: 0.366	valid_mae_loss: 0.448	valid_mape_loss: 88.750	q_loss: 7.68723	current_q: -11.81467	target_q: -11.81681
+
+# Epoch 1, variate: 4 (1.86 min): valid_mse_loss: 0.416	valid_mae_loss: 0.463	valid_mape_loss: 74.273	q_loss: 0.32845	current_q: 4.94202	target_q: 4.95410
+
+# Epoch 2, variate: 4 (1.87 min): valid_mse_loss: 0.412	valid_mae_loss: 0.478	valid_mape_loss: 84.073	q_loss: 0.45681	current_q: 11.32797	target_q: 11.32895
+
+# Epoch 3, variate: 4 (1.86 min): valid_mse_loss: 0.444	valid_mae_loss: 0.478	valid_mape_loss: 77.858	q_loss: 0.55879	current_q: 15.54186	target_q: 15.54262
+
+# Epoch 4, variate: 4 (1.86 min): valid_mse_loss: 0.403	valid_mae_loss: 0.466	valid_mape_loss: 81.641	q_loss: 0.93766	current_q: 17.67091	target_q: 17.67158
+
+# Epoch 5, variate: 4 (1.88 min): valid_mse_loss: 0.372	valid_mae_loss: 0.455	valid_mape_loss: 89.446	q_loss: 1.47226	current_q: 17.55291	target_q: 17.55346
+
+# Epoch 6, variate: 4 (1.86 min): valid_mse_loss: 0.389	valid_mae_loss: 0.454	valid_mape_loss: 79.153	q_loss: 2.52200	current_q: 15.56528	target_q: 15.56553
+
+# Epoch 7, variate: 4 (1.87 min): valid_mse_loss: 0.378	valid_mae_loss: 0.448	valid_mape_loss: 82.278	q_loss: 2.59781	current_q: 12.50677	target_q: 12.50700
+
+# Epoch 8, variate: 4 (1.87 min): valid_mse_loss: 0.359	valid_mae_loss: 0.441	valid_mape_loss: 85.013	q_loss: 5.70511	current_q: 7.84267	target_q: 7.84022
+
+# Epoch 9, variate: 4 (1.86 min): valid_mse_loss: 0.437	valid_mae_loss: 0.495	valid_mape_loss: 98.470	q_loss: 4.76889	current_q: -0.06658	target_q: -0.07430
+
+# Epoch 10, variate: 4 (1.87 min): valid_mse_loss: 0.360	valid_mae_loss: 0.460	valid_mape_loss: 104.388	q_loss: 6.66547	current_q: -7.17828	target_q: -7.18323
+
+# Epoch 11, variate: 4 (1.87 min): valid_mse_loss: 0.334	valid_mae_loss: 0.442	valid_mape_loss: 98.388	q_loss: 10.54840	current_q: -16.26447	target_q: -16.27077
+
+# Epoch 12, variate: 4 (1.87 min): valid_mse_loss: 0.413	valid_mae_loss: 0.470	valid_mape_loss: 95.819	q_loss: 12.65917	current_q: -29.30021	target_q: -29.30476
+
+# Epoch 13, variate: 4 (1.86 min): valid_mse_loss: 0.449	valid_mae_loss: 0.496	valid_mape_loss: 98.235	q_loss: 17.25884	current_q: -41.25618	target_q: -41.26166
+
+# Epoch 14, variate: 4 (1.87 min): valid_mse_loss: 0.335	valid_mae_loss: 0.450	valid_mape_loss: 103.823	q_loss: 17.76011	current_q: -49.64954	target_q: -49.65279
+
+# Epoch 15, variate: 4 (1.86 min): valid_mse_loss: 0.421	valid_mae_loss: 0.482	valid_mape_loss: 91.216	q_loss: 26.38584	current_q: -54.85195	target_q: -54.85579
+
+# Epoch 16, variate: 4 (1.86 min): valid_mse_loss: 0.395	valid_mae_loss: 0.497	valid_mape_loss: 111.044	q_loss: 33.05054	current_q: -64.40995	target_q: -64.41487
+

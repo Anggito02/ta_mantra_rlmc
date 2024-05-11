@@ -255,7 +255,7 @@ def pretrain_actor(obs_dim, act_dim, hidden_dim, states, train_error, cls_weight
 
 
 def run_rlmc(use_weight=True, use_td=True, use_extra=True, use_pretrain=True, epsilon=0.3):
-    unify_input_data_new('dataset/ili')
+    unify_input_data_new(DATA_DIR)
     (train_X_merged, valid_X_merged, test_X_merged, train_y_merged, valid_y_merged, test_y_merged, train_error_merged, valid_error_merged, _) = load_data(DATA_DIR)
     valid_preds_merged = np.load(f'{DATA_DIR}/rl_bm/bm_valid_preds.npy')
     test_preds_merged = np.load(f'{DATA_DIR}/rl_bm/bm_test_preds.npy')
@@ -288,7 +288,7 @@ def run_rlmc(use_weight=True, use_td=True, use_extra=True, use_pretrain=True, ep
 
         env = Env(train_error, train_y, variate)
         best_model_weight = get_state_weight(train_error)
-        if not os.path.exists('dataset/ili/batch_buffer.csv'):
+        if not os.path.exists(f'{DATA_DIR}/batch_buffer.csv'):
             batch_buffer = []
             for state_idx in trange(L, desc='[Create buffer]'):
                 best_model_idx = train_error[state_idx].argmin()
@@ -298,9 +298,9 @@ def run_rlmc(use_weight=True, use_td=True, use_extra=True, use_pretrain=True, ep
             batch_buffer_df = pd.DataFrame(
                 batch_buffer,
                 columns=['state_idx', 'action_idx', 'rank', 'mape', 'mae', 'mse', 'weight']) 
-            batch_buffer_df.to_csv('dataset/ili/batch_buffer.csv')
+            batch_buffer_df.to_csv(f'{DATA_DIR}/batch_buffer.csv')
         else:
-            batch_buffer_df = pd.read_csv('dataset/ili/batch_buffer.csv', index_col=0)
+            batch_buffer_df = pd.read_csv(f'{DATA_DIR}/batch_buffer.csv', index_col=0)
         q_mape = [batch_buffer_df['mape'].quantile(0.1*i) for i in range(1, 10)]     
         q_mae = [batch_buffer_df['mae'].quantile(0.1*i) for i in range(1, 10)]
         q_mse = [batch_buffer_df['mse'].quantile(0.1*i) for i in range(1, 10)]
@@ -347,7 +347,7 @@ def run_rlmc(use_weight=True, use_td=True, use_extra=True, use_pretrain=True, ep
                 combined_reward_mse = mse_reward + rank_reward
                 combined_reward_mae = mae_reward + rank_reward
                 mae_lst.append(new_mae)
-                rewards.append(combined_reward_mae)
+                rewards.append(combined_reward_mse)
             return rewards, mae_lst
 
         # state weight
@@ -488,8 +488,8 @@ def run_rlmc(use_weight=True, use_td=True, use_extra=True, use_pretrain=True, ep
         torch.cuda.empty_cache()
     
     merged_weighted_y = np.array(merged_weighted_y)
-    merged_weighted_y = merged_weighted_y.reshape(merged_weighted_y.shape[1], merged_weighted_y.shape[2], merged_weighted_y.shape[3], merged_weighted_y.shape[0])
-    test_mse_loss, test_mae_loss, _, test_mape_loss, _ = metric(merged_weighted_y, test_preds_merged)
+    merged_weighted_y = merged_weighted_y.reshape(merged_weighted_y.shape[1], merged_weighted_y.shape[2], merged_weighted_y.shape[0])
+    test_mae_loss, test_mse_loss, _, test_mape_loss, _ = metric(merged_weighted_y, test_y_merged)
         
     print(f'test_mse_loss: {test_mse_loss:.3f}\t'
         f'test_mae_loss: {test_mae_loss:.3f}\t'
