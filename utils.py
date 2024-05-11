@@ -62,6 +62,20 @@ def compute_mse_error(y, bm_preds):
         loss_df[i] = model_mse_loss
     return loss_df
 
+def compute_mse_error_new(y, bm_preds):
+    mse_loss_np = []
+    for i in trange(bm_preds.shape[1], desc='[Compute Error]'):
+        mse_loss_df_variate = [[] for _ in range(bm_preds.shape[-1])]
+        for v in range(bm_preds.shape[-1]):
+            model_mse_loss = [mean_squared_error(
+                y[j, :, v], bm_preds[j, i, :, v],
+                symmetric=True) for j in range(len(y))]
+            mse_loss_df_variate[v] = model_mse_loss
+        mse_loss_np.append(mse_loss_df_variate)
+    mse_loss_np = np.array(mse_loss_np)
+    mse_loss_np = mse_loss_np.reshape(mse_loss_np.shape[2], mse_loss_np.shape[0], mse_loss_np.shape[1])
+    return mse_loss_np
+
 def unify_input_data():
     ### RAW DATASET PREPROCESS ###
     train_val_X   = np.load('dataset/train_val_X.npy')    # (62795, 120, 7)
@@ -162,9 +176,9 @@ def unify_input_data_new(data_path):
     np.save(f'{data_path}/rl_bm/bm_valid_preds.npy', valid_preds_merge_data)
     np.save(f'{data_path}/rl_bm/bm_test_preds.npy', test_preds_merge_data)
 
-    train_error_df = compute_mse_error(train_y, train_preds_merge_data)
-    valid_error_df = compute_mse_error(vali_y, valid_preds_merge_data)
-    test_error_df  = compute_mse_error(test_y , test_preds_merge_data)
+    train_error_df = compute_mse_error_new(train_y, train_preds_merge_data)
+    valid_error_df = compute_mse_error_new(vali_y, valid_preds_merge_data)
+    test_error_df  = compute_mse_error_new(test_y , test_preds_merge_data)
 
     np.savez(f'{data_path}/dataset/input_rl.npz',
              train_X=train_x,
