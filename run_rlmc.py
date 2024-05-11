@@ -270,7 +270,7 @@ def run_rlmc(use_weight=True, use_td=True, use_extra=True, use_pretrain=True, ep
 
     env = Env(train_error, train_y)
     best_model_weight = get_state_weight(train_error)
-    if not os.path.exists('dataset/ili/batch_buffer.csv'):
+    if not os.path.exists(f'{DATA_DIR}/dataset/batch_buffer.csv'):
         batch_buffer = []
         for state_idx in trange(L, desc='[Create buffer]'):
             best_model_idx = train_error[state_idx].argmin()
@@ -280,9 +280,9 @@ def run_rlmc(use_weight=True, use_td=True, use_extra=True, use_pretrain=True, ep
         batch_buffer_df = pd.DataFrame(
             batch_buffer,
             columns=['state_idx', 'action_idx', 'rank', 'mape', 'mae', 'mse', 'weight']) 
-        batch_buffer_df.to_csv('dataset/ili/batch_buffer.csv')
+        batch_buffer_df.to_csv(f'{DATA_DIR}/dataset/batch_buffer.csv')
     else:
-        batch_buffer_df = pd.read_csv('dataset/ili/batch_buffer.csv', index_col=0)
+        batch_buffer_df = pd.read_csv(f'{DATA_DIR}/dataset/batch_buffer.csv', index_col=0)
     q_mape = [batch_buffer_df['mape'].quantile(0.1*i) for i in range(1, 10)]     
     q_mae = [batch_buffer_df['mae'].quantile(0.1*i) for i in range(1, 10)]
     q_mse = [batch_buffer_df['mse'].quantile(0.1*i) for i in range(1, 10)]
@@ -329,7 +329,7 @@ def run_rlmc(use_weight=True, use_td=True, use_extra=True, use_pretrain=True, ep
             combined_reward_mse = mse_reward + rank_reward
             combined_reward_mae = mae_reward + rank_reward
             mae_lst.append(new_mae)
-            rewards.append(combined_reward_mae)
+            rewards.append(combined_reward_mse)
         return rewards, mae_lst
 
     # state weight
@@ -461,7 +461,7 @@ if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument('--seed', default=42, type=int)
-    parser.add_argument('--use_weight',   action='store_false', default=True)
+    parser.add_argument('--use_weight',   action='store_false', default=False)
     parser.add_argument('--use_td',       action='store_false', default=True)
     parser.add_argument('--use_extra',    action='store_false', default=True)
     parser.add_argument('--use_pretrain', action='store_false', default=True)

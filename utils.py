@@ -39,6 +39,15 @@ def compute_mae_error(y, bm_preds):
         loss_df[i] = model_mae_loss
     return loss_df
 
+def compute_mse_error(y, bm_preds):
+    loss_df = pd.DataFrame()
+    for i in trange(bm_preds.shape[1], desc='[Compute Error]'):
+        model_mse_loss = [mean_squared_error(
+            y[j], bm_preds[j, i, :],
+            symmetric=True) for j in range(len(y))]
+        loss_df[i] = model_mse_loss
+    return loss_df
+
 
 def unify_input_data():
     ### RAW DATASET PREPROCESS ###
@@ -86,9 +95,9 @@ def unify_input_data():
     test_preds = np.concatenate(merge_test_data, axis=1)  # (62795, 9, 24)
     np.save('dataset/bm_test_preds.npy', test_preds)            # Berupa value hasil loss function test dari 1 learner Mantra
 
-    train_error_df = compute_mape_error(train_y, train_preds)
-    valid_error_df = compute_mape_error(valid_y, valid_preds)
-    test_error_df  = compute_mape_error(test_y , test_preds)
+    train_error_df = compute_mse_error(train_y, train_preds)
+    valid_error_df = compute_mse_error(valid_y, valid_preds)
+    test_error_df  = compute_mse_error(test_y , test_preds)
 
     np.savez('dataset/input.npz',
              train_X=train_X,
