@@ -137,7 +137,7 @@ class Env:
         new_mape = mean_absolute_percentage_error(self.y[idx], weighted_y)
         new_mae = mean_absolute_error(self.y[idx], weighted_y)
         new_mse = mean_squared_error(self.y[idx], weighted_y)
-        new_error = np.array([*self.error[idx], new_mape])
+        new_error = np.array([*self.error[idx], new_mse])
         rank = np.where(np.argsort(new_error) == len(new_error) - 1)[0][0]
         return rank, new_mape, new_mae, new_mse
 
