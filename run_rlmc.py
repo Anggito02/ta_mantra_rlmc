@@ -16,6 +16,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
+from utils import unify_input_data_new
 
 DATA_DIR = 'dataset/iliS'
 # SCALE_MEAN, SCALE_STD = np.load(f'{DATA_DIR}/scaler.npy')
@@ -137,7 +138,7 @@ class Env:
         new_mape = mean_absolute_percentage_error(self.y[idx], weighted_y)
         new_mae = mean_absolute_error(self.y[idx], weighted_y)
         new_mse = mean_squared_error(self.y[idx], weighted_y)
-        new_error = np.array([*self.error[idx], new_mse])
+        new_error = np.array([*self.error[idx], new_mae])
         rank = np.where(np.argsort(new_error) == len(new_error) - 1)[0][0]
         return rank, new_mape, new_mae, new_mse
 
@@ -253,6 +254,7 @@ def pretrain_actor(obs_dim, act_dim, hidden_dim, states, train_error, cls_weight
 
 
 def run_rlmc(use_weight=True, use_td=True, use_extra=True, use_pretrain=True, epsilon=0.3):
+    unify_input_data_new(DATA_DIR)
     (train_X, valid_X, test_X, train_y, valid_y, test_y, train_error, valid_error, _) = load_data(DATA_DIR)
     valid_preds = np.load(f'{DATA_DIR}/rl_bm/bm_vali_preds.npy')
     test_preds = np.load(f'{DATA_DIR}/rl_bm/bm_test_preds.npy')
@@ -329,7 +331,7 @@ def run_rlmc(use_weight=True, use_td=True, use_extra=True, use_pretrain=True, ep
             combined_reward_mse = mse_reward + rank_reward
             combined_reward_mae = mae_reward + rank_reward
             mae_lst.append(new_mae)
-            rewards.append(combined_reward_mse)
+            rewards.append(combined_reward_mae)
         return rewards, mae_lst
 
     # state weight
@@ -379,9 +381,10 @@ def run_rlmc(use_weight=True, use_td=True, use_extra=True, use_pretrain=True, ep
 
     step_size = 4
     step_num  = int(np.ceil(L / step_size))
-    # best_mape_loss = np.inf
+    best_mape_loss = np.inf
     best_mse_loss = np.inf
-    patience, max_patience = 0, 10
+    best_mae_loss = np.inf
+    patience, max_patience = 0, 15
     for epoch in trange(500):
         t1 = time.time()
         q_loss_lst, pi_loss_lst, q_lst, target_q_lst  = [], [], [], []
@@ -436,6 +439,8 @@ def run_rlmc(use_weight=True, use_td=True, use_extra=True, use_pretrain=True, ep
         #     best_mape_loss = valid_mape_loss
         if valid_mse_loss < best_mse_loss:
             best_mse_loss = valid_mse_loss
+        # if valid_mae_loss < best_mae_loss:
+        #     best_mae_loss = valid_mae_loss
             patience = 0
             # save best model
             for param, target_param in zip(agent.actor.parameters(), best_actor.parameters()):

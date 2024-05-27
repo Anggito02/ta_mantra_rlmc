@@ -111,6 +111,59 @@ def unify_input_data():
              test_error=test_error_df
             )
 
+def unify_input_data_new(data_path):
+    train_x = np.load(f'{data_path}/dataset/input_train_x.npy')    
+    train_y = np.load(f'{data_path}/dataset/input_train_y.npy')
+    vali_x  = np.load(f'{data_path}/dataset/input_vali_x.npy')
+    vali_y  = np.load(f'{data_path}/dataset/input_vali_y.npy')
+    test_x  = np.load(f'{data_path}/dataset/input_test_x.npy')
+    test_y  = np.load(f'{data_path}/dataset/input_test_y.npy')
+
+    # predictions
+    merge_data = []
+    train_preds_npz = np.load(f'{data_path}/rl_bm/bm_train_preds.npz')
+    for model_name in train_preds_npz.keys():
+        train_preds = train_preds_npz[model_name]
+        train_preds = np.expand_dims(train_preds, axis=1)
+        merge_data.append(train_preds)
+    train_preds_merge_data = np.concatenate(merge_data, axis=1)
+
+    merge_data = []
+    valid_preds_npz = np.load(f'{data_path}/rl_bm/bm_vali_preds.npz')
+    for model_name in valid_preds_npz.keys():
+        valid_preds = valid_preds_npz[model_name]
+        valid_preds = np.expand_dims(valid_preds, axis=1)
+        merge_data.append(valid_preds)
+    valid_preds_merge_data = np.concatenate(merge_data, axis=1)
+
+    merge_data = []
+    test_preds_npz = np.load(f'{data_path}/rl_bm/bm_test_preds.npz')
+    for model_name in test_preds_npz.keys():
+        test_preds = test_preds_npz[model_name]
+        test_preds = np.expand_dims(test_preds, axis=1)
+        merge_data.append(test_preds)
+    test_preds_merge_data = np.concatenate(merge_data, axis=1)
+    
+    # save preds
+    np.save(f'{data_path}/rl_bm/bm_train_preds.npy', train_preds_merge_data)
+    np.save(f'{data_path}/rl_bm/bm_vali_preds.npy', valid_preds_merge_data)
+    np.save(f'{data_path}/rl_bm/bm_test_preds.npy', test_preds_merge_data)
+
+    train_error_df = compute_mse_error(train_y, train_preds_merge_data)
+    valid_error_df = compute_mse_error(vali_y, valid_preds_merge_data)
+    test_error_df  = compute_mse_error(test_y , test_preds_merge_data)
+
+    np.savez(f'{data_path}/dataset/input_rl.npz',
+             train_X=train_x,
+             valid_X=vali_x,
+             test_X=test_x,
+             train_y=train_y,
+             valid_y=vali_y,
+             test_y=test_y,
+             train_error=train_error_df,
+             valid_error=valid_error_df,
+             test_error=test_error_df
+            )
 
 def load_data(DATA_DIR):
     input_data = np.load(f'{DATA_DIR}/dataset/input_rl.npz')
